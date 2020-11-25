@@ -22,7 +22,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:rim="http://www.blackberry.com/ns/widgets"
     id="cordova-plugin-camera"
-    version="4.0.3">
+    version="4.0.4">
     <name>Camera</name>
     <description>Cordova Camera Plugin</description>
     <license>Apache 2.0</license>
@@ -57,6 +57,11 @@
         </config-file>
         <config-file target="AndroidManifest.xml" parent="/*">
             <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+            <queries>
+                <intent>
+                    <action android:name="android.media.action.IMAGE_CAPTURE" />
+                </intent>
+            </queries>
         </config-file>
         <config-file target="AndroidManifest.xml" parent="application">
           <provider

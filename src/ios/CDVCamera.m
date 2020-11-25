@@ -508,11 +508,11 @@ static NSString* toBase64(NSData* data) {
     completion(result);
 }
 
-- (CDVPluginResult*)resultForVideo:(NSDictionary*)info
-{
-    NSString* moviePath = [[info objectForKey:UIImagePickerControllerMediaURL] absoluteString];
-    return [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:moviePath];
-}
+ - (CDVPluginResult*)resultForVideo:(NSURL*)movieUrl
+ {
+     NSString* moviePath = [movieUrl absoluteString];
+     return [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:moviePath];
+ }
 
 - (void)imagePickerController:(UIImagePickerController*)picker didFinishPickingMediaWithInfo:(NSDictionary*)info
 {
@@ -533,7 +533,26 @@ static NSString* toBase64(NSData* data) {
             }];
         }
         else {
-            result = [weakSelf resultForVideo:info];
+            NSURL *processedMovieUrl = [info objectForKey:UIImagePickerControllerMediaURL];
+            NSURL *targetMovieUrl = nil;
+            
+            if (IsAtLeastiOSVersion(@"13.0") && [[processedMovieUrl pathComponents] containsObject:@"PluginKitPlugin"]) {
+                NSFileManager *fileManager = [NSFileManager defaultManager];
+                NSURL *tmpDirUrl = [NSURL fileURLWithPath:NSTemporaryDirectory()];
+                NSString *processedMovieFileName = [processedMovieUrl lastPathComponent];
+                targetMovieUrl = [tmpDirUrl URLByAppendingPathComponent:processedMovieFileName];
+                NSError *error;
+                
+                if (![fileManager copyItemAtURL:processedMovieUrl toURL:targetMovieUrl error:&error]) {
+                    targetMovieUrl = processedMovieUrl;
+                    NSLog(@"Copy error: %@", error);
+                }
+            }
+            else {
+                targetMovieUrl = processedMovieUrl;
+            }
+
+            result = [weakSelf resultForVideo:targetMovieUrl];
             [weakSelf.commandDelegate sendPluginResult:result callbackId:cameraPicker.callbackId];
             weakSelf.hasPendingOperation = NO;
             weakSelf.pickerController = nil;
