@@ -488,6 +488,15 @@ static NSString* toBase64(NSData* data) {
     NSString *documentsDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@"tmp"];
     NSString *filePath = [documentsDirectory stringByAppendingPathComponent:lastString];
     if (moviePath == nil || filePath == nil) {
+        
+        __weak CDVCamera* weakSelf = self;
+        // Denied; show an alert
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController *alertController = [UIAlertController alertControllerWithTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"] message:NSLocalizedString(@"Something went wrong. Please try again.", nil) preferredStyle:UIAlertControllerStyleAlert];
+            [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:nil]];
+            [weakSelf.viewController presentViewController:alertController animated:YES completion:nil];
+        });
+
         return [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:filePath];
     }
 
