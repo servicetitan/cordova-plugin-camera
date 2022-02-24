@@ -487,11 +487,11 @@ static NSString* toBase64(NSData* data) {
     NSFileManager *fileManager = [NSFileManager defaultManager];
     NSString *documentsDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@"tmp"];
     NSString *filePath = [documentsDirectory stringByAppendingPathComponent:lastString];
-    [fileManager copyItemAtPath:moviePath toPath:filePath error:&error];
-
-    if (moviePath == nil || filePath == nil || error != nil) {
+    if (moviePath == nil || filePath == nil) {
         return [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:filePath];
     }
+
+    [fileManager copyItemAtPath:moviePath toPath:filePath error:&error];
     
     return [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:filePath];
 }
