@@ -479,12 +479,30 @@ static NSString* toBase64(NSData* data) {
 
 - (CDVPluginResult*)resultForVideo:(NSDictionary*)info
 {
-    NSString* moviePath = [[info objectForKey:UIImagePickerControllerMediaURL] absoluteString];
-    // On iOS 13 the movie path becomes inaccessible, create and return a copy
-    if (IsAtLeastiOSVersion(@"13.0")) {
-        moviePath = [self createTmpVideo:[[info objectForKey:UIImagePickerControllerMediaURL] path]];
+    //https://github.com/apache/cordova-plugin-camera/issues/506#issuecomment-534070130
+    NSString* moviePath = [[info objectForKey:UIImagePickerControllerMediaURL] path];
+    NSArray* spliteArray = [moviePath componentsSeparatedByString: @"/"];
+    NSString* lastString = [spliteArray lastObject];
+    NSError *error;
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSString *documentsDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@"tmp"];
+    NSString *filePath = [documentsDirectory stringByAppendingPathComponent:lastString];
+    if (moviePath == nil || filePath == nil) {
+        
+        __weak CDVCamera* weakSelf = self;
+        // Denied; show an alert
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController *alertController = [UIAlertController alertControllerWithTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"] message:NSLocalizedString(@"Something went wrong. Please try again.", nil) preferredStyle:UIAlertControllerStyleAlert];
+            [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:nil]];
+            [weakSelf.viewController presentViewController:alertController animated:YES completion:nil];
+        });
+
+        return [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:filePath];
     }
-    return [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:moviePath];
+
+    [fileManager copyItemAtPath:moviePath toPath:filePath error:&error];
+    
+    return [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:filePath];
 }
 
 - (NSString *) createTmpVideo:(NSString *) moviePath {
