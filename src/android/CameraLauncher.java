@@ -147,8 +147,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         this.callbackContext = callbackContext;
         //Adding an API to CoreAndroid to get the BuildConfigValue
         //This allows us to not make this a breaking change to embedding
-        this.applicationId = (String) BuildHelper.getBuildConfigValue(cordova.getActivity(), "APPLICATION_ID");
-        this.applicationId = preferences.getString("applicationId", this.applicationId);
+        // this.applicationId = (String) BuildHelper.getBuildConfigValue(cordova.getActivity(), "APPLICATION_ID");
+        // this.applicationId = preferences.getString("applicationId", this.applicationId);
+        this.applicationId = cordova.getContext().getPackageName();
 
 
         if (action.equals(TAKE_PICTURE_ACTION)) {
@@ -1315,19 +1316,38 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
     public void onRequestPermissionResult(int requestCode, String[] permissions,
                                           int[] grantResults) {
-        for (int r : grantResults) {
-            if (r == PackageManager.PERMISSION_DENIED) {
-                this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, PERMISSION_DENIED_ERROR));
-                return;
+        String version = android.os.Build.VERSION.RELEASE;
+        if(Integer.parseInt(version) >= 13)
+        {
+            if(PermissionHelper.hasPermission(this, Manifest.permission.CAMERA)) {
+                switch (requestCode) {
+                    case TAKE_PIC_SEC:
+                        takePicture(this.destType, this.encodingType);
+                        break;
+                    case SAVE_TO_ALBUM_SEC:
+                        this.getImage(this.srcType, this.destType, this.encodingType);
+                        break;
+                }
+            }
+            else {
+                PermissionHelper.hasPermission(this, Manifest.permission.CAMERA);
             }
         }
-        switch (requestCode) {
-            case TAKE_PIC_SEC:
-                takePicture(this.destType, this.encodingType);
-                break;
-            case SAVE_TO_ALBUM_SEC:
-                this.getImage(this.srcType, this.destType);
-                break;
+        else{
+            for (int r : grantResults) {
+                if (r == PackageManager.PERMISSION_DENIED) {
+                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, PERMISSION_DENIED_ERROR));
+                    return;
+                }
+            }
+            switch (requestCode) {
+                case TAKE_PIC_SEC:
+                    takePicture(this.destType, this.encodingType);
+                    break;
+                case SAVE_TO_ALBUM_SEC:
+                    this.getImage(this.srcType, this.destType, this.encodingType);
+                    break;
+            }
         }
     }
 
