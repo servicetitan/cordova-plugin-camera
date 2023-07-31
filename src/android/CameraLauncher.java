@@ -18,6 +18,7 @@
 */
 package org.apache.cordova.camera;
 
+import android.annotation.SuppressLint;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
