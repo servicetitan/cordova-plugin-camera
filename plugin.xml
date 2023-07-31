@@ -55,12 +55,9 @@
             </feature>
         </config-file>
         <config-file target="AndroidManifest.xml" parent="/*">
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-            <queries>
-                <intent>
-                    <action android:name="android.media.action.IMAGE_CAPTURE" />
-                </intent>
-            </queries>
+            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+            <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+            <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
         </config-file>
         <config-file target="AndroidManifest.xml" parent="application">
           <provider
