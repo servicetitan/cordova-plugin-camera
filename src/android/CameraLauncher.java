@@ -1357,7 +1357,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                         takePicture(this.destType, this.encodingType);
                         break;
                     case SAVE_TO_ALBUM_SEC:
-                        this.getImage(this.srcType, this.destType, this.encodingType);
+                        this.getImage(this.srcType, this.destType);
                         break;
                 }
             }
@@ -1377,7 +1377,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                     takePicture(this.destType, this.encodingType);
                     break;
                 case SAVE_TO_ALBUM_SEC:
-                    this.getImage(this.srcType, this.destType, this.encodingType);
+                    this.getImage(this.srcType, this.destType);
                     break;
             }
         }
