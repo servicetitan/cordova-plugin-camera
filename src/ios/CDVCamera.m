@@ -29,6 +29,7 @@
 #import <ImageIO/CGImageDestination.h>
 #import <MobileCoreServices/UTCoreTypes.h>
 #import <objc/message.h>
+#import <Photos/Photos.h>
 
 #ifndef __CORDOVA_4_0_0
     #import <Cordova/NSData+Base64.h>
@@ -183,6 +184,18 @@ static NSString* toBase64(NSData* data) {
     }];
 }
 
+- (void)showPhotoLibraryPermissionAlert:(NSString *)callbackId {
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"] message:NSLocalizedString(@"Access to the photo library has been prohibited; please select \"All Photos\" option in the Settings app to continue.", nil) preferredStyle:UIAlertControllerStyleAlert];
+    [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [self sendNoPermissionResult:callbackId];
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Settings", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString] options:@{} completionHandler:nil];
+        [self sendNoPermissionResult:callbackId];
+    }]];
+    [self.viewController presentViewController:alertController animated:YES completion:nil];
+}
+
 - (void)showCameraPicker:(NSString*)callbackId withOptions:(CDVPictureOptions *) pictureOptions
 {
     // Perform UI operations on the main thread
@@ -201,19 +214,30 @@ static NSString* toBase64(NSData* data) {
             [[[self pickerController] pickerPopoverController] setDelegate:nil];
             [[self pickerController] setPickerPopoverController:nil];
         }
-
-        if ([self popoverSupported] && (pictureOptions.sourceType != UIImagePickerControllerSourceTypeCamera)) {
-            if (cameraPicker.pickerPopoverController == nil) {
-                cameraPicker.pickerPopoverController = [[NSClassFromString(@"UIPopoverController") alloc] initWithContentViewController:cameraPicker];
-            }
-            [self displayPopover:pictureOptions.popoverOptions];
-            self.hasPendingOperation = NO;
-        } else {
-            cameraPicker.modalPresentationStyle = UIModalPresentationCurrentContext;
-            [self.viewController presentViewController:cameraPicker animated:YES completion:^{
-                self.hasPendingOperation = NO;
-            }];
-        }
+        __weak CDVCamera* weakSelf = self;
+        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                switch (status) {
+                    case PHAuthorizationStatusAuthorized: {
+                        if ([weakSelf popoverSupported] && (pictureOptions.sourceType != UIImagePickerControllerSourceTypeCamera)) {
+                            if (cameraPicker.pickerPopoverController == nil) {
+                                cameraPicker.pickerPopoverController = [[NSClassFromString(@"UIPopoverController") alloc] initWithContentViewController:cameraPicker];
+                            }
+                            [weakSelf displayPopover:pictureOptions.popoverOptions];
+                            weakSelf.hasPendingOperation = NO;
+                        } else {
+                            cameraPicker.modalPresentationStyle = UIModalPresentationCurrentContext;
+                            [weakSelf.viewController presentViewController:cameraPicker animated:YES completion:^{
+                                weakSelf.hasPendingOperation = NO;
+                            }];
+                        }
+                    }
+                    default:
+                        [weakSelf showPhotoLibraryPermissionAlert:callbackId];
+                        break;
+                }
+            });
+        }];
     });
 }
 
@@ -477,7 +501,7 @@ static NSString* toBase64(NSData* data) {
     completion(result);
 }
 
-- (CDVPluginResult*)resultForVideo:(NSDictionary*)info
+- (void)resultForVideo:(NSDictionary*)info completion:(void (^)(CDVPluginResult* res))completion
 {
     //https://github.com/apache/cordova-plugin-camera/issues/506#issuecomment-534070130
     NSString* moviePath = [[info objectForKey:UIImagePickerControllerMediaURL] path];
@@ -488,21 +512,65 @@ static NSString* toBase64(NSData* data) {
     NSString *documentsDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@"tmp"];
     NSString *filePath = [documentsDirectory stringByAppendingPathComponent:lastString];
     if (moviePath == nil || filePath == nil) {
-        
-        __weak CDVCamera* weakSelf = self;
-        // Denied; show an alert
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alertController = [UIAlertController alertControllerWithTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"] message:NSLocalizedString(@"Something went wrong. Please try again.", nil) preferredStyle:UIAlertControllerStyleAlert];
-            [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:nil]];
-            [weakSelf.viewController presentViewController:alertController animated:YES completion:nil];
-        });
-
-        return [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:filePath];
+        PHAsset *asset = [info objectForKey:UIImagePickerControllerPHAsset];
+        if (asset != nil) {
+            [self saveAsset:asset completion:^(NSString *filePath) {
+                if (filePath != nil) {
+                    completion([CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:filePath]);
+                }
+                else {
+                    [self showErrorWithMessage:filePath completion:completion];
+                }
+            }];
+        }
+        else {
+            [self showErrorWithMessage:filePath completion:completion];
+        }
     }
+    else {
+        [fileManager copyItemAtPath:moviePath toPath:filePath error:&error];
+        completion([CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:filePath]);
+    }
+}
 
-    [fileManager copyItemAtPath:moviePath toPath:filePath error:&error];
-    
-    return [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:filePath];
+- (void)showErrorWithMessage:(NSString *)message completion:(void (^)(CDVPluginResult* res))completion {
+    __weak CDVCamera* weakSelf = self;
+    // Denied; show an alert
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alertController = [UIAlertController alertControllerWithTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"] message:NSLocalizedString(@"Something went wrong. Please try again.", nil) preferredStyle:UIAlertControllerStyleAlert];
+        [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:nil]];
+        [weakSelf.viewController presentViewController:alertController animated:YES completion:nil];
+    });
+    completion([CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:message]);
+
+}
+
+- (void)saveAsset:(PHAsset *)asset completion:(void (^)(NSString *))completion {
+    PHImageManager *manager = [PHImageManager defaultManager];
+    PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
+    options.version = PHVideoRequestOptionsVersionOriginal;
+    options.deliveryMode = PHVideoRequestOptionsDeliveryModeAutomatic;
+    options.networkAccessAllowed = YES;
+    [manager requestAVAssetForVideo:asset
+                            options:options
+                      resultHandler:^(AVAsset * _Nullable asset, AVAudioMix * _Nullable audioMix, NSDictionary * _Nullable info) {
+        AVURLAsset * _Nullable urlAsset = (AVURLAsset * _Nullable)asset;
+        NSString* moviePath = [[urlAsset URL] path];
+        NSArray* spliteArray = [moviePath componentsSeparatedByString: @"/"];
+        NSString* lastString = [spliteArray lastObject];
+        NSError *error;
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        NSString *documentsDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@"tmp"];
+        NSString *filePath = [documentsDirectory stringByAppendingPathComponent:lastString];
+        
+        if (moviePath != nil || filePath != nil) {
+            [fileManager copyItemAtPath:moviePath toPath:filePath error:&error];
+            completion(filePath);
+        }
+        else {
+            completion(nil);
+        }
+    }];
 }
 
 - (NSString *) createTmpVideo:(NSString *) moviePath {
@@ -520,8 +588,6 @@ static NSString* toBase64(NSData* data) {
     __weak CDVCamera* weakSelf = self;
 
     dispatch_block_t invoke = ^(void) {
-        __block CDVPluginResult* result = nil;
-
         NSString* mediaType = [info objectForKey:UIImagePickerControllerMediaType];
         if ([mediaType isEqualToString:(NSString*)kUTTypeImage]) {
             [weakSelf resultForImage:cameraPicker.pictureOptions info:info completion:^(CDVPluginResult* res) {
@@ -533,10 +599,11 @@ static NSString* toBase64(NSData* data) {
             }];
         }
         else {
-            result = [weakSelf resultForVideo:info];
-            [weakSelf.commandDelegate sendPluginResult:result callbackId:cameraPicker.callbackId];
-            weakSelf.hasPendingOperation = NO;
-            weakSelf.pickerController = nil;
+            [weakSelf resultForVideo:info completion:^(CDVPluginResult *result) {
+                [weakSelf.commandDelegate sendPluginResult:result callbackId:cameraPicker.callbackId];
+                weakSelf.hasPendingOperation = NO;
+                weakSelf.pickerController = nil;
+            }];
         }
     };
 
