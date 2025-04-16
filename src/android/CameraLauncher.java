@@ -61,6 +61,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.ArrayList;
+import java.nio.file.Files;
+
+import android.webkit.MimeTypeMap;
+import android.provider.OpenableColumns;
+import android.util.Log;
 
 /**
  * This class launches the camera view, allows the user to take a picture, closes the camera view,
@@ -227,34 +233,19 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     //--------------------------------------------------------------------------
 
     private String[] getPermissions(boolean storageOnly, int mediaType) {
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (storageOnly) {
-                switch (mediaType) {
-                    case PICTURE:
-                        return new String[]{ Manifest.permission.READ_MEDIA_IMAGES };
-                    case VIDEO:
-                        return new String[]{ Manifest.permission.READ_MEDIA_VIDEO };
-                    default:
-                        return new String[]{ Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO };
-                }
-            }
-            else {
-                switch (mediaType) {
-                    case PICTURE:
-                        return new String[]{ Manifest.permission.CAMERA, Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES };
-                    case VIDEO:
-                        return new String[]{ Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_VIDEO };
-                    default:
-                        return new String[]{ Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO };
-                }
-            }
-        } else {
-            if (storageOnly) {
-                return new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE};
-            } else {
-                return new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE};
-            }
+        ArrayList<String> permissions = new ArrayList<>();
+
+        if (android.os.Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            // Android API 30 or lower
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }
+        if (!storageOnly) {
+            // Add camera permission when not storage.
+            permissions.add(Manifest.permission.CAMERA);
+        }
+
+        return permissions.toArray(new String[0]);
     }
 
     private String getTempDirectoryPath() {
@@ -381,7 +372,10 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             throw new IllegalArgumentException("Invalid Encoding Type: " + encodingType);
         }
 
-        return new File(getTempDirectoryPath(), fileName);
+         File cacheDir = new File(getTempDirectoryPath(), "org.apache.cordova.camera");
+         cacheDir.mkdir();
+ 
+         return new File(cacheDir, fileName);
     }
 
 
@@ -529,7 +523,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             if (this.allowEdit && this.croppedUri != null) {
                 writeUncompressedImage(croppedUri, galleryUri);
             } else {
-                if (Build.VERSION.SDK_INT <= 28) { // Between LOLLIPOP_MR1 and P, can be changed later to the constant Build.VERSION_CODES.P
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
                     writeTakenPictureToGalleryLowerThanAndroidQ(galleryUri);
                 } else { // Android Q or higher
                     writeTakenPictureToGalleryStartingFromAndroidQ(galleryPathVO);
@@ -752,7 +746,13 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             // If you ask for video or the selected file cannot be processed
             // there will be no attempt to resize any returned data.
             if (this.mediaType == VIDEO  || !isImageMimeTypeProcessable(mimeTypeOfGalleryFile)) {
-                this.callbackContext.success(finalLocation);
+                
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    Uri tempUri = copyFromUriToTempFile(uri);
+                    this.callbackContext.success(tempUri.toString());
+                } else {
+                    this.callbackContext.success(finalLocation);
+                }
             } else {
 
                 // This is a special case to just return the path as no scaling,
@@ -1022,7 +1022,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 // Generate a temporary file
                 String timeStamp = new SimpleDateFormat(TIME_FORMAT).format(new Date());
                 String fileName = "IMG_" + timeStamp + (getExtensionForEncodingType());
-                localFile = new File(getTempDirectoryPath() + fileName);
+                localFile = new File(getTempDirectoryPath(), fileName);
                 galleryUri = Uri.fromFile(localFile);
                 writeUncompressedImage(fileStream, galleryUri);
                 try {
@@ -1408,7 +1408,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         }
 
         if (this.imageUri != null) {
-            state.putString(IMAGE_URI_KEY, this.imageFilePath);
+            state.putString(IMAGE_URI_KEY, this.imageUri.toString());
         }
 
         if (this.imageFilePath != null) {
@@ -1455,4 +1455,78 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
          }
          return true;
      }
+
+     public Uri copyFromUriToTempFile(Uri uri) {
+        InputStream inputStream = null;
+        OutputStream outputStream = null;
+
+        try {
+            inputStream = cordova.getActivity().getContentResolver().openInputStream(uri);
+
+            String filename = getFileName(uri);
+            String extension = null;
+
+            if (filename == null) {
+                filename = String.valueOf(System.currentTimeMillis());
+            } else {
+                int lastDotIndex = filename.lastIndexOf('.');
+
+                if (lastDotIndex != -1) {
+                    extension = filename.substring(lastDotIndex);
+                    filename = filename.substring(0, lastDotIndex);
+                }
+            }
+
+            if(extension == null) {
+                extension = "." + getFileExtension(uri);
+            }
+
+            File file = File.createTempFile("tmp_" + filename + "_", extension);
+
+            outputStream = Files.newOutputStream(file.toPath());
+
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+
+            outputStream.flush();
+            return Uri.fromFile(file);
+        } catch (Exception e) {
+            Log.e("TMA", "CameraLauncher exception", e);
+            return null;
+
+        } finally {
+            try {
+                if (inputStream != null) inputStream.close();
+            } catch (Exception ignored) {}
+
+            try {
+                if (outputStream != null) outputStream.close();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private String getFileExtension(Uri uri) {
+        return MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(cordova.getContext().getContentResolver().getType(uri));
+    }
+
+    private String getFileName(Uri uri) {
+        String[] projection = new String[] { OpenableColumns.DISPLAY_NAME };
+        Cursor returnCursor =
+                cordova.getContext().getContentResolver().query(uri, projection, null, null, null);
+
+        String name = null;
+
+        if(returnCursor != null) {
+            returnCursor.moveToFirst();
+            name = returnCursor.getString(0);
+            returnCursor.close();
+        }
+
+        return name;
+    }
 }
